@@ -1,0 +1,101 @@
+name: Build Shadow Recovery for Lancelot (crDroid 9 / Android 13)
+
+on:
+  workflow_dispatch:
+    inputs:
+      MANIFEST_BRANCH:
+        description: 'Recovery Manifest Branch'
+        required: true
+        default: 'twrp-12.1'
+      DEVICE_TREE_URL:
+        description: 'Device Tree URL'
+        required: true
+        default: 'https://github.com/twrpdtgen/android_device_xiaomi_lancelot'
+      DEVICE_TREE_BRANCH:
+        description: 'Device Tree Branch'
+        required: true
+        default: 'lancelot-user-12-SP1A.210812.016-V13.0.4.0.SJCMIXM-release-keys'
+      DEVICE_PATH:
+        description: 'Device Path'
+        required: true
+        default: 'device/xiaomi/lancelot'
+      DEVICE_NAME:
+        description: 'Device Codename'
+        required: true
+        default: 'lancelot'
+      BUILD_TARGET:
+        description: 'Build Target'
+        required: true
+        default: 'recovery'
+
+jobs:
+  build:
+    name: Build Recovery by GitHub Actions
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Clean up runner disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        docker rmi $(docker images -q) -f || true
+        sudo apt-get autoremove -y
+        sudo apt-get clean
+        df -h
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y           gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib           libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree           lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache           lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev           libsdl1.2-dev libssl-dev libxml2 lzop pngcrush rsync schedtool           squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static           libncurses5 python3 openjdk-11-jdk curl git
+        sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+
+    - name: Install repo tool
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Initialize Git
+      run: |
+        git config --global user.name "YusufbekDesign"
+        git config --global user.email "yusufbek@shadowrecovery.local"
+
+    - name: Initialize Recovery Manifest
+      run: |
+        mkdir -p /home/runner/work/recovery
+        cd /home/runner/work/recovery
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ github.event.inputs.MANIFEST_BRANCH }}
+        repo sync -c --no-clone-bundle --no-tags -j$(nproc --all)
+
+    - name: Clone Device Tree
+      run: |
+        cd /home/runner/work/recovery
+        git clone --depth=1 ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ${{ github.event.inputs.DEVICE_PATH }}
+
+    - name: Customize Shadow Recovery Branding & Decryption Settings
+      run: |
+        cd /home/runner/work/recovery/${{ github.event.inputs.DEVICE_PATH }}
+        echo "TW_THEME := portrait_hdpi" >> BoardConfig.mk
+        echo "TW_INCLUDE_CRYPTO := true" >> BoardConfig.mk
+        echo "TW_INCLUDE_CRYPTO_FBE := true" >> BoardConfig.mk
+        echo "TW_INCLUDE_FBE_METADATA_DECRYPT := true" >> BoardConfig.mk
+        echo "BOARD_USES_METADATA_PARTITION := true" >> BoardConfig.mk
+        echo "PLATFORM_VERSION := 13" >> BoardConfig.mk
+        echo "PLATFORM_SECURITY_PATCH := 2026-01-01" >> BoardConfig.mk
+        echo "TW_DEVICE_VERSION := Shadow-v1.0-A13" >> BoardConfig.mk
+
+    - name: Build Recovery Image
+      run: |
+        cd /home/runner/work/recovery
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        lunch twrp_${{ github.event.inputs.DEVICE_NAME }}-eng || lunch omni_${{ github.event.inputs.DEVICE_NAME }}-eng
+        mka ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
+
+    - name: Upload Recovery Image Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ShadowRecovery-${{ github.event.inputs.DEVICE_NAME }}-A13
+        path: /home/runner/work/recovery/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img
