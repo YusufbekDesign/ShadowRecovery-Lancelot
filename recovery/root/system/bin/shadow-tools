@@ -1,0 +1,98 @@
+#!/system/bin/sh
+# ================================================================
+# Shadow Recovery CLI Utilities
+# Custom Recovery Engine for Xiaomi Redmi 9 (lancelot)
+# Author: YusufbekDesign
+# ================================================================
+
+export PATH=/system/bin:/sbin:/vendor/bin:$PATH
+
+print_banner() {
+    echo "======================================================"
+    echo "            SHADOW RECOVERY UTILITIES v1.0            "
+    echo "   Xiaomi Redmi 9 (lancelot) | crDroid 9 / Android 13 "
+    echo "              Developer: YusufbekDesign               "
+    echo "======================================================"
+}
+
+case "$1" in
+    info)
+        print_banner
+        echo "[+] Battery Level: $(cat /sys/class/power_supply/battery/capacity 2>/dev/null || echo 'Unknown')%"
+        echo "[+] Battery Status: $(cat /sys/class/power_supply/battery/status 2>/dev/null || echo 'Unknown')"
+        echo "[+] Security Patch: $(getprop ro.build.version.security_patch 2>/dev/null)"
+        echo "[+] Active Recovery: $(getprop ro.twrp.version 2>/dev/null || echo 'Shadow Recovery')"
+        echo ""
+        echo "[+] Mounted Storage Devices:"
+        df -h | grep -E "(sdcard|data|system|vendor|external_sd|metadata)"
+        ;;
+
+    download)
+        print_banner
+        if [ -z "$2" ]; then
+            echo "[!] Xato: Yuklab olish havolasini kiritmadingiz."
+            echo "    Foydalanish: shadow-tools download <URL> [saqlash_yo'li]"
+            exit 1
+        fi
+        URL="$2"
+        OUT="${3:-/external_sd/downloaded_rom.zip}"
+        echo "[*] Internetdan yuklab olinmoqda: $URL"
+        echo "[*] Saqlash joyi: $OUT"
+        
+        if which curl >/dev/null 2>&1; then
+            curl -L -k --progress-bar -o "$OUT" "$URL"
+        elif which wget >/dev/null 2>&1; then
+            wget --no-check-certificate -O "$OUT" "$URL"
+        else
+            echo "[!] Xato: curl yoki wget topilmadi."
+            exit 1
+        fi
+        
+        if [ -f "$OUT" ]; then
+            echo "[+] Muvaffaqiyatli yuklab olindi! Fayl hajmi: $(ls -lh "$OUT" | awk '{print $5}')"
+        else
+            echo "[!] Yuklab olishda xatolik yuz berdi."
+        fi
+        ;;
+
+    net-up)
+        print_banner
+        echo "[*] USB Reverse Tethering tarmog'i faollashtirilmoqda..."
+        ifconfig rndis0 192.168.42.2 netmask 255.255.255.0 up 2>/dev/null || ifconfig usb0 192.168.42.2 netmask 255.255.255.0 up 2>/dev/null
+        route add default gw 192.168.42.1 2>/dev/null
+        setprop net.dns1 8.8.8.8
+        setprop net.dns2 1.1.1.1
+        echo "[+] Tarmoq sozlandi! Ping tekshiruvi: ping -c 3 8.8.8.8"
+        ;;
+
+    backup-imei)
+        print_banner
+        BACKUP_DIR="${2:-/external_sd/Shadow_IMEI_Backup_$(date +%Y%m%d_%H%M%S)}"
+        mkdir -p "$BACKUP_DIR"
+        echo "[*] NVRAM va tarmoq bo'limlari zaxiralanmoqda -> $BACKUP_DIR"
+        dd if=/dev/block/by-name/nvram of="$BACKUP_DIR/nvram.img" bs=4096 2>/dev/null
+        dd if=/dev/block/by-name/nvdata of="$BACKUP_DIR/nvdata.img" bs=4096 2>/dev/null
+        dd if=/dev/block/by-name/nvcfg of="$BACKUP_DIR/nvcfg.img" bs=4096 2>/dev/null
+        dd if=/dev/block/by-name/protect1 of="$BACKUP_DIR/protect1.img" bs=4096 2>/dev/null
+        dd if=/dev/block/by-name/protect2 of="$BACKUP_DIR/protect2.img" bs=4096 2>/dev/null
+        echo "[+] Barcha IMEI va tarmoq kalitlari xavfsiz saqlandi!"
+        ;;
+
+    backup-boot)
+        print_banner
+        OUT="${2:-/external_sd/boot_backup_$(date +%Y%m%d_%H%M%S).img}"
+        echo "[*] Boot bo'limi zaxiralanmoqda -> $OUT"
+        dd if=/dev/block/by-name/boot of="$OUT" bs=4096 2>/dev/null
+        echo "[+] Boot zaxirasi tayyor: $OUT"
+        ;;
+
+    *)
+        print_banner
+        echo "Mavjud buyruqlar:"
+        echo "  shadow-tools info                  - Telefon va bo'limlar holatini ko'rish"
+        echo "  shadow-tools download <URL> [joy]  - To'g'ridan-to'g'ri internetdan ROM/ZIP yuklash"
+        echo "  shadow-tools net-up                - Kompyuterdan USB orqali internet ulash"
+        echo "  shadow-tools backup-imei [papka]   - IMEI va tarmoq (NVRAM) xavfsiz nusxasini olish"
+        echo "  shadow-tools backup-boot [fayl]    - Hozirgi Kernel/Boot nusxasini olish"
+        ;;
+esac

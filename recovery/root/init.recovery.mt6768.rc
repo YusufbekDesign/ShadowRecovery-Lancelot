@@ -1,3 +1,24 @@
+# Init script for MediaTek Helio G80 (MT6768) - Redmi 9 (lancelot)
+# Shadow Recovery Project - YusufbekDesign
+
+on early-init
+    setprop sys.usb.configfs 1
+    setprop sys.usb.ffs.aio_compat 1
+
 on init
     setprop sys.usb.ffs.aio_compat 1
     setprop sys.usb.configfs 1
+    write /sys/class/leds/lcd-backlight/brightness 1200
+
+on fs
+    # Mount metadata partition for Android 13 FBE decryption
+    mkdir /metadata 0771 system system
+    mount ext4 /dev/block/platform/bootdevice/by-name/md_udc /metadata noatime nosuid nodev discard
+    
+    # Symlink block devices for convenient flashing
+    wait /dev/block/platform/bootdevice
+    symlink /dev/block/platform/bootdevice /dev/block/bootdevice
+
+on boot
+    start servicemanager
+    start health-hal-2-1
